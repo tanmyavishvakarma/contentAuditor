@@ -75,4 +75,6 @@ const upsertSecQueAnswers = async ({ action, ctx, answersToUpsert }) => {
 
 const a = <div>asfdasdfdsa</div>
 
+const obj = { a: 'd' }
+
 module.exports = upsertSecQueAnswers
