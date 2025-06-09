@@ -3,6 +3,7 @@ const acorn = require('acorn');
 const jsx = require('acorn-jsx');
 const walk = require('acorn-walk');
 const { extend } = require('acorn-jsx-walk');
+const XLSX = require('xlsx');
 
 extend(walk.base);
 
@@ -73,7 +74,6 @@ walk.simple(ast, {
     });
   },
   Property(node) {
-    console.log({ node });
     if (node.value.name && node.value.type === 'Literal') {
 
       strings.push({
@@ -96,15 +96,55 @@ walk.simple(ast, {
     // }
   }
 });
+const processBatch = async (strings, batchSize = 100) => {
+  const MAX_EXCEL_CELL_LENGTH = 32767;
+  const rows = [];
 
-
-const ENGLISH = strings.reduce((acc, item, i) => {
-  acc[`TEXT${i + 1}`] = {
-    text: item.text,
-    location: `${item.file}:${item.line}:${item.column}`,
-    type: item.type
+  //split text into sentences
+  const splitIntoSentences = (text) => {
+    return text.split(/(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])\s*$|(?<=[.!?])\s*["']\s+(?=[A-Z])/g)
+      .map(s => s.trim())
+      .filter(s => s.length > 0); // Remove empty sentences
   };
-  return acc;
-}, {});
 
-console.log(JSON.stringify(ENGLISH, null, 2));
+  strings.forEach((item, i) => {
+    const text = item.text;
+    const sentences = splitIntoSentences(text);
+
+    sentences.forEach((sentence, sentenceIndex) => {
+      if (sentence.length <= MAX_EXCEL_CELL_LENGTH) {
+        rows.push({
+          id: `TEXT${i + 1}_S${sentenceIndex + 1}`,
+          text: sentence,
+          fileName: item.file,
+          lineNumber: `${item.line}:${item.column}`,
+          type: `${item.type} (Sentence ${sentenceIndex + 1})`
+        });
+      } else {
+        let chunkIndex = 0;
+        for (let j = 0; j < sentence.length; j += MAX_EXCEL_CELL_LENGTH) {
+          const chunk = sentence.slice(j, j + MAX_EXCEL_CELL_LENGTH);
+          rows.push({
+            id: `TEXT${i + 1}_S${sentenceIndex + 1}_C${chunkIndex + 1}`,
+            text: chunk,
+            fileName: item.file,
+            lineNumber: `${item.line}:${item.column}`,
+            type: `${item.type} (Sentence ${sentenceIndex + 1}, Part ${chunkIndex + 1})`
+          });
+          chunkIndex++;
+        }
+      }
+    });
+  });
+
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize);
+    console.log(`Processing batch ${Math.floor(i / batchSize) + 1} with ${chunk.length} rows`);
+    const worksheet = XLSX.utils.json_to_sheet(chunk);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "Content");
+    await XLSX.writeFile(workbook, `content_${Math.floor(i / batchSize) + 1}.xlsx`, { compression: true });
+  }
+};
+
+processBatch(strings).catch(console.error);
