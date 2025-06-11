@@ -9,11 +9,22 @@ send sentence to gpt
 create excel
 */
 
-const splitIntoSentences = (sentences) => {
-    return sentences
-        .split(/(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])\s*$|(?<=[.!?])\s*["']\s+(?=[A-Z])/g)
-        .map((s) => s.trim())
-        .filter((s) => s.length > 0); // Remove empty sentences
+const splitIntoSentences = (text) => {
+    const cleanText = text
+        // .replace(/^#+\s*.*$/gm, '') // Remove markdown headers
+        // .replace(/\*\*/g, '') // Remove bold markdown
+        .replace(/\n{2,}/g, ' ') // Replace multiple newlines with space
+        .trim();
+
+    return cleanText
+        .replace(/(\s|^)(\d{1,2})\.\s/g, '|$2. ')
+        .split(/\|/)
+        .map(s => s.trim())
+        .flatMap(s =>
+            s.split(/(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])\s*$|(?<=[.!?])\s*["']\s+(?=[A-Z])|(?<=[.!?])\s*["']\s*$|(?<=[.!?])\s*["']\s*["]\s+(?=[A-Z])/g)
+        )
+        .map(s => s.trim())
+        .filter(s => s.length > 0);
 };
 
 const genHashKey = (sentence) => {
@@ -42,7 +53,7 @@ const createStoreHash = (map, hashData) => {
 
 const createSuggestions = async (sentenceMap) => {
     const senArray = Array.from(sentenceMap.values());
-    const batchSize = 100;
+    const batchSize = 20;
     const allRows = [];
 
     for (let i = 0; i < senArray.length; i += batchSize) {
@@ -96,4 +107,4 @@ const processBatch = async (strings, batchSize = 100) => {
 }
 
 
-module.exports = { processBatch, genHashKey }
+module.exports = { processBatch, genHashKey, splitIntoSentences }
