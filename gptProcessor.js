@@ -15,7 +15,7 @@ async function getSuggestions(sentence) {
       2. Second suggestion
       3. Brief small concise text of what you changed and why did you do it
 
-      The output should be in the form that a user can direcly copy paste it for the document.
+      The output should be in the form that a user can direcly copy paste it for the document. So direct sentences not extra quotes from your side required.
                 `),
             new HumanMessage(`Sentence: "${sentence}"`)
         ]);

@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const XLSX = require('xlsx');
 const { getSuggestions } = require('./gptProcessor');
 
 /*
@@ -20,11 +21,11 @@ const splitIntoSentences = (text) => {
         .replace(/(\s|^)(\d{1,2})\.\s/g, '|$2. ')
         .split(/\|/)
         .map(s => s.trim())
-        .flatMap(s =>
-            s.split(/(?<=[.!?])\s+(?=[A-Z])|(?<=[.!?])\s*$|(?<=[.!?])\s*["']\s+(?=[A-Z])|(?<=[.!?])\s*["']\s*$|(?<=[.!?])\s*["']\s*["]\s+(?=[A-Z])/g)
-        )
-        .map(s => s.trim())
-        .filter(s => s.length > 0);
+        .flatMap(s => {
+            const sentences = s.split(/(?<=[.!?])\s+/);
+            return sentences.map(sentence => sentence.trim())
+                .filter(sentence => sentence.length > 0);
+        });
 };
 
 const genHashKey = (sentence) => {
@@ -50,47 +51,64 @@ const createStoreHash = (map, hashData) => {
     });
     return hash
 }
-
 const createSuggestions = async (sentenceMap) => {
     const senArray = Array.from(sentenceMap.values());
-    const batchSize = 20;
-    const allRows = [];
+    const batchSize = 50;
+    let currentRows = [];
+    let rowCount = 0;
+    let fileIndex = 1;
 
     for (let i = 0; i < senArray.length; i += batchSize) {
         const batchSentences = senArray.slice(i, i + batchSize);
 
         const promises = batchSentences.map(async (sentenceObj) => {
             const suggestions = await getSuggestions(sentenceObj.sentence);
-            const imporvedSentence = {
+            // Add logging to debug the response
+            console.log('GPT Response:', suggestions);
+            return {
                 ...sentenceObj,
-                suggestions: suggestions.suggestions,
-                reason: suggestions.reason
-
+                suggestions: suggestions.suggestions || [],
+                reason: suggestions.reason || 'No reason provided'
             };
-
-            console.log({ imporvedSentence })
-            return imporvedSentence
         });
 
         const batchSuggestions = await Promise.all(promises);
-        allRows.push(createExcelData(batchSuggestions));
+
+        for (const sentence of batchSuggestions) {
+            for (const occurrence of sentence.occurrences) {
+                const row = {
+                    ...occurrence,
+                    original_sentence: sentence.sentence,
+                    suggestions: Array.isArray(sentence.suggestions) ? sentence.suggestions.join(' | ') : 'No suggestions available',
+                    reason: sentence.reason
+                };
+
+                currentRows.push(row);
+                rowCount++;
+
+                // When we reach 100 rows, create a new Excel file
+                if (rowCount === 100) {
+                    const workbook = XLSX.utils.book_new();
+                    const worksheet = XLSX.utils.json_to_sheet(currentRows);
+                    XLSX.utils.book_append_sheet(workbook, worksheet, `Sheet1`);
+                    XLSX.writeFile(workbook, `suggestions_${fileIndex}.xlsx`);
+
+                    currentRows = [];
+                    rowCount = 0;
+                    fileIndex++;
+                }
+            }
+        }
     }
 
-    return allRows.flat();
-};
-
-
-const createExcelData = (updtedSentences) => {
-    const rows = []
-    updtedSentences.forEach((sentence) => {
-        sentence.occurrences.forEach((occurrences) => {
-            rows.push({
-                ...occurrences,
-                suggestion: sentence.suggestion
-            })
-        })
-    })
+    if (currentRows.length > 0) {
+        const workbook = XLSX.utils.book_new();
+        const worksheet = XLSX.utils.json_to_sheet(currentRows);
+        XLSX.utils.book_append_sheet(workbook, worksheet, `Sheet1`);
+        XLSX.writeFile(workbook, `suggestions_${fileIndex}.xlsx`);
+    }
 }
+
 
 const processBatch = async (strings, batchSize = 100) => {
     const sentenceMap = new Map()
