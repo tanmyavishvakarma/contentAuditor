@@ -1,23 +1,20 @@
 const XLSX = require("xlsx");
 const { connectRedis } = require('./redis');
-const { processBatch } = require('./textProcessor');
-const ASTProcessor = require('./astProcessor');
+const TextProcessor = require('./textProcessor');
+const FileProcessor = require('./fileProcessor');
 
+const sentenceMap = new Map()
 
-
-(async () => {
+const startFixing = async (directoryPath) => {
   try {
-    // await connectRedis();
+    const fileProcessor = new FileProcessor();
+    const textProcessor = new TextProcessor();
 
-    const astProcessor = new ASTProcessor();
-    const strings = astProcessor.parseFile("./a.js");
-
-    console.log('Found node types:', astProcessor.getSeenTypes());
-    await processBatch(strings);
-
-    // Clear the processor for potential reuse
-    astProcessor.clear();
+    const strings = await fileProcessor.processDirectory(directoryPath);
+    await textProcessor.processBatch(strings, sentenceMap);
   } catch (error) {
     console.error('Error:', error);
   }
-})();
+}
+
+startFixing('./test/');
